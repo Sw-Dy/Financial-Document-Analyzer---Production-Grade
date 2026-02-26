@@ -1,323 +1,879 @@
-# Financial Document Analyzer v2.0.0
+# Financial Document Analyzer - Production Grade
 
-**Status:** ✅ PRODUCTION READY | **10 Bugs Fixed**
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────┐
-│              FastAPI Server              │
-│  POST /analyze  GET /status  GET /analysis│
-└─────────────────┬────────────────────────┘
-                  │
-        ┌─────────▼──────────┐
-        │   SQLite Database  │
-        │  (Task Persistence)│
-        └────┬──────────┬────┘
-             │          │
-  ┌──────────▼──┐  ┌────▼─────────────────┐
-  │   Celery    │  │    CrewAI Agents     │
-  │  Workers    │  │  • Senior Analyst    │
-  │             │  │  • Risk Assessor     │
-  │ Dev: SQLite │  │  • Cash Flow Expert  │
-  │ Prod: Redis │  │  • Investment Strat  │
-  └─────────────┘  └──────────────────────┘
-```
-
-**Request Flow:** `POST /analyze` → validate → queue task → return `task_id` in <500ms  
-**Background:** Celery worker runs CrewAI analysis → writes result to DB  
-**Retrieval:** `GET /status/{id}` to poll → `GET /analysis/{id}` when complete
+**Status:** ✅ **PRODUCTION READY**  
+**Version:** 2.0.0  
+**Last Updated:** February 27, 2026
 
 ---
 
-## Setup
+## 📋 Quick Overview
+
+Advanced financial document analysis system that processes corporate reports, financial statements, and investment documents using CrewAI agents with enterprise-grade architecture.
+
+**Key Features:**
+- ✅ Non-blocking async API with Celery task queue
+- ✅ SQLite database for task persistence
+- ✅ Four specialized financial analysis agents
+- ✅ Structured JSON output format
+- ✅ Full audit trail with timestamps
+- ✅ Development mode (no Redis required)
+- ✅ Production mode with Redis support
+- ✅ Comprehensive logging and error handling
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FastAPI Server                           │
+│  (Non-blocking HTTP endpoints with async/await)             │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+         ┌───────────┼───────────┐
+         ▼           ▼           ▼
+    POST /analyze   GET /status  GET /analysis
+    (submit)        (check)      (retrieve)
+         │           │           │
+         └───────────┼───────────┘
+                     │
+         ┌───────────▼───────────┐
+         │   SQLite Database     │
+         │  (Persistent Storage) │
+         └───────┬───────────────┘
+                 │
+  ┌──────────────┴──────────────┐
+  ▼                             ▼
+┌──────────────────┐   ┌───────────────────────┐
+│ Celery Workers   │   │ CrewAI Agents         │
+│                  │   │ (Background Tasks)    │
+│  Development:    │   │                       │
+│  SQLite Broker   │   │ • Senior Analyst      │
+│                  │   │ • Risk Assessor       │
+│  Production:     │   │ • Cash Flow Expert    │
+│  Redis Broker    │   │ • Investment Strategy │
+└──────────────────┘   └───────────────────────┘
+```
+
+---
+
+## 🚀 Getting Started (5 Minutes)
+
+### Step 1: Install Dependencies
 
 ```bash
-# 1. Install
+# Navigate to project directory
+cd financial-document-analyzer-debug
+
+# Install all required packages
 pip install -r requirements.txt
 
-# 2. Start API (Terminal 1)
-uvicorn main:app --reload
+# (Automatically installs Celery, SQLAlchemy, FastAPI, etc.)
+```
 
-# 3. Start Worker (Terminal 2)
+### Step 2: Start FastAPI Server
+
+**Terminal 1:**
+```bash
+uvicorn main:app --reload
+```
+
+Output:
+```
+INFO:     Uvicorn running on http://127.0.0.1:8000
+✓ Database initialized
+✓ Directories created
+✓ Application startup complete
+```
+
+### Step 3: Start Celery Worker
+
+**Terminal 2:**
+```bash
 celery -A celery_app worker --loglevel=info --pool=solo
 ```
 
-**Production (Redis):**
+Output:
+```
+[Celery] Using SQLAlchemy/SQLite backend (development mode - no Redis required)
+celery@YOUR-MACHINE ready.
+```
+
+### Step 4: Test the API
+
+**Terminal 3:**
+```bash
+# Submit a PDF for analysis
+curl -X POST http://localhost:8000/analyze \
+  -F "file=@financial_document.pdf" \
+  -F "query=Comprehensive financial analysis"
+
+# Response:
+{
+  "task_id": "12345-uuid-6789",
+  "status": "pending",
+  "status_url": "/status/12345-uuid-6789",
+  "message": "Analysis submitted successfully"
+}
+
+# Check status
+curl http://localhost:8000/status/12345-uuid-6789
+
+# Get results (after completion)
+curl http://localhost:8000/analysis/12345-uuid-6789
+```
+
+---
+
+## 📡 API Documentation
+
+### Endpoints
+
+#### 1. **Health Check** ✓
+
+```
+GET /health
+```
+
+**Response (200 OK):**
+```json
+{
+  "status": "healthy",
+  "service": "financial-analyzer",
+  "version": "2.0.0",
+  "timestamp": "2026-02-27T03:20:00Z",
+  "components": {
+    "api": "operational",
+    "database": "operational",
+    "celery": "operational"
+  }
+}
+```
+
+---
+
+#### 2. **Submit Analysis** (Non-blocking)
+
+```
+POST /analyze
+Content-Type: multipart/form-data
+```
+
+**Parameters:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| file | File | Yes | PDF financial document |
+| query | String | No | Analysis instructions (default: "Analyze this financial document comprehensively") |
+| email | String | No | User email for tracking |
+
+**Example:**
+```bash
+curl -X POST http://localhost:8000/analyze \
+  -F "file=@annual_report.pdf" \
+  -F "query=Analyze revenue trends and profitability" \
+  -F "email=analyst@company.com"
+```
+
+**Response (200 OK):**
+```json
+{
+  "task_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "status": "pending",
+  "message": "Analysis submitted successfully. Use status endpoint to check progress.",
+  "status_url": "/status/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
+```
+
+**Use `task_id` for all subsequent requests.**
+
+---
+
+#### 3. **Check Status** (Polling)
+
+```
+GET /status/{task_id}
+```
+
+**Path Parameter:**
+- `task_id`: UUID string from /analyze response
+
+**Example:**
+```bash
+curl http://localhost:8000/status/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+**Response (200 OK):**
+```json
+{
+  "task_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "status": "running",
+  "progress": 50
+}
+```
+
+**Status Values:**
+- `pending` (0%) - Queued, not yet started
+- `running` (50%) - Analysis in progress
+- `completed` (100%) - Finished successfully
+- `failed` (0%) - Error occurred
+
+**Retry Logic:**
+```python
+import time
+task_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+while True:
+    response = requests.get(f"http://localhost:8000/status/{task_id}")
+    status = response.json()["status"]
+    
+    if status == "completed":
+        print("Analysis ready! Call /analysis endpoint")
+        break
+    elif status == "failed":
+        print("Analysis failed")
+        break
+    else:
+        print(f"Status: {status}")
+        time.sleep(2)  # Poll every 2 seconds
+```
+
+---
+
+#### 4. **Retrieve Result** (When Complete)
+
+```
+GET /analysis/{task_id}
+```
+
+**Path Parameter:**
+- `task_id`: UUID string from /analyze response
+
+**Example:**
+```bash
+curl http://localhost:8000/analysis/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+**Response (200 OK - Completed):**
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "user_id": 1,
+  "filename": "annual_report.pdf",
+  "status": "completed",
+  "result": {
+    "revenue_analysis": "Revenue grew 15% YoY from $1.2B to $1.38B...",
+    "profitability_analysis": "Net margins improved from 8% to 10%...",
+    "cash_flow_analysis": "Operating cash flow increased 20% YoY...",
+    "risk_assessment": "Primary risks: competitive pressure, regulatory...",
+    "recommendation": "BUY",
+    "confidence_score": 87,
+    "cited_sources": [
+      "Page 2: Revenue breakdown by segment",
+      "Page 5: Profit & loss statement"
+    ],
+    "reasoning": "Strong fundamentals with improving margins justify buy recommendation..."
+  },
+  "error": null,
+  "created_at": "2026-02-27T03:15:00Z",
+  "completed_at": "2026-02-27T03:20:30Z"
+}
+```
+
+**Response (202 - Still Processing):**
+```json
+{
+  "detail": "Analysis still processing. Current status: running. Check /status/{task_id}"
+}
+```
+
+**Response (400 - Failed):**
+```json
+{
+  "detail": "Analysis failed: PDF parsing error - corrupted file"
+}
+```
+
+**Response (404 - Not Found):**
+```json
+{
+  "detail": "Analysis {task_id} not found"
+}
+```
+
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Create `.env` file in project root:
+
+```bash
+# Production mode only
+ENV=production
+REDIS_URL=redis://localhost:6379/0
+
+# Optional: Database
+DATABASE_URL=sqlite:///./financial_analyzer.db
+
+# Optional: OpenAI
+OPENAI_API_KEY=sk-...
+```
+
+### Development Mode (Default)
+
+No environment variables needed. Runs with:
+- SQLite broker/backend (auto-created in `celery_data/`)
+- Dummy LLM fallback (no API key required)
+- Debug logging enabled
+
+### Production Mode
+
 ```bash
 export ENV=production
-export REDIS_URL=redis://localhost:6379/0
-export OPENAI_API_KEY=sk-...
+export REDIS_URL=redis://your-redis-server:6379/0
 ```
 
 ---
 
-## API Reference
+## 📊 Database Schema
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | System status |
-| `POST` | `/analyze` | Submit PDF (returns `task_id`) |
-| `GET` | `/status/{task_id}` | Poll: `pending→running→completed\|failed` |
-| `GET` | `/analysis/{task_id}` | Retrieve completed result |
-
-```bash
-# Submit
-curl -X POST http://localhost:8000/analyze \
-  -F "file=@report.pdf" -F "query=Analyze revenue trends"
-# → { "task_id": "uuid-here", "status": "pending" }
-
-# Poll
-curl http://localhost:8000/status/uuid-here
-# → { "status": "running", "progress": 50 }
-
-# Retrieve
-curl http://localhost:8000/analysis/uuid-here
-```
-
----
-
-## Database Schema
+### Users Table
 
 ```sql
 CREATE TABLE users (
-  id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  email    VARCHAR(255) UNIQUE NOT NULL,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email VARCHAR(255) UNIQUE NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+```
 
+### Analysis Results Table
+
+```sql
 CREATE TABLE analysis_results (
-  id            VARCHAR(36) PRIMARY KEY,   -- UUID / task_id
-  user_id       INTEGER REFERENCES users,
-  filename      VARCHAR(255) NOT NULL,
-  status        VARCHAR(50) NOT NULL,      -- pending|running|completed|failed
-  result_json   JSON,
+  id VARCHAR(36) PRIMARY KEY,           -- UUID (task_id)
+  user_id INTEGER FOREIGN KEY,
+  filename VARCHAR(255) NOT NULL,
+  status VARCHAR(50) NOT NULL,          -- pending|running|completed|failed
+  result_json JSON,                     -- Structured analysis output
   error_message VARCHAR(500),
-  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-  completed_at  DATETIME
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  completed_at DATETIME
 );
 ```
 
 ---
 
-## 🐛 10 Bug Fixes
+## 📝 Analysis Output Format
+
+All results follow this JSON schema:
+
+```json
+{
+  "revenue_analysis": "string (detailed revenue metrics)",
+  "profitability_analysis": "string (margin analysis, ROE, etc)",
+  "cash_flow_analysis": "string (operating CF, FCF, capex)",
+  "risk_assessment": "string (liquidity, solvency, operational risks)",
+  "recommendation": "BUY|HOLD|SELL",
+  "confidence_score": 0-100,
+  "cited_sources": ["string", "string"],
+  "reasoning": "string (justification for recommendation)"
+}
+```
+
+**Constraints:**
+- All fields use documentary evidence from PDF
+- Recommendations require ≥70% confidence to be issued
+- All claims must cite specific document sections
+- Temperature set to 0.2 for consistency
 
 ---
 
-### Bug #1 — Incorrect CrewAI Import Path `[CRITICAL]`
-**File:** `agents.py:7`
+## 🐛 Debugging & Troubleshooting
 
-CrewAI v0.130.0 flattened its public API — classes are now exported from the top-level package, not submodules.
+### View Logs
+
+**FastAPI:**
+```bash
+# Terminal running uvicorn shows all logs
+# Look for [Endpoint], [Analyze], [Status] markers
+```
+
+**Celery:**
+```bash
+# Terminal running Celery shows all logs
+# Look for [Task], [CRUD] markers
+```
+
+**Database:**
+```bash
+# Check current tasks
+sqlite3 financial_analyzer.db
+sqlite> SELECT id, status, created_at FROM analysis_results;
+```
+
+### Common Issues
+
+#### 1. Celery "Connection refused" error
+
+**Symptom:**
+```
+Error 10061 connecting to localhost:6379
+```
+
+**Fix:** Celery is configured to use SQLite in development mode. Ensure:
+```bash
+# Environment should NOT be production
+echo $ENV  # Should be empty or "development"
+
+# Restart Celery
+celery -A celery_app worker --loglevel=info --pool=solo
+```
+
+#### 2. 404 "Task not found"
+
+**Symptom:**
+```
+GET /status/{task_id} returns 404
+```
+
+**Fix:** Ensure:
+1. Session is properly closed (FastAPI dependency management)
+2. Record was committed to database
+3. Check logs for `✓ VERIFIED` message
+
+**Verify:**
+```bash
+# Check if record exists in database
+sqlite3 financial_analyzer.db
+sqlite> SELECT * FROM analysis_results WHERE id = 'YOUR_TASK_ID';
+```
+
+#### 3. File upload fails
+
+**Symptom:**
+```
+400 Bad Request: Only PDF files are supported
+```
+
+**Fix:** 
+- Ensure file has `.pdf` extension
+- Maximum file size: System RAM available
+- Example:
+```bash
+curl -X POST http://localhost:8000/analyze \
+  -F "file=@report.pdf"  # Must be .pdf
+```
+
+#### 4. Analysis takes too long
+
+**Symptom:**
+```
+GET /analysis/{task_id} still returns 202 after 10+ minutes
+```
+
+**Fix:**
+- Check Celery logs for CrewAI execution
+- Verify PDF is readable and not corrupted
+- Check OPENAI_API_KEY if using real LLM (development uses dummy)
+
+---
+
+## 📚 Complete Bug Fixes Reference
+
+**This project had 10 critical bugs that have been fixed:**
+
+| Bug # | Issue | Severity | Status |
+|-------|-------|----------|--------|
+| #1 | Incorrect CrewAI import path | CRITICAL | ✅ FIXED |
+| #2 | Circular LLM self-reference | CRITICAL | ✅ FIXED |
+| #3 | Invalid tool type in Task | CRITICAL | ✅ FIXED |
+| #4 | Wrong tool decorator import | CRITICAL | ✅ FIXED |
+| #5 | Missing PDF loader import | CRITICAL | ✅ FIXED |
+| #6 | Duplicate function name shadowing | HIGH | ✅ FIXED |
+| #7 | Missing python-multipart dependency | HIGH | ✅ FIXED |
+| #8 | Pydantic v2 strict LLM validation | MEDIUM | ✅ FIXED |
+| #9 | Requirements file dependency conflicts | CRITICAL | ✅ FIXED |
+| #10 | Session lifecycle (404 errors) | CRITICAL | ✅ FIXED |
+
+**For detailed explanations of each bug and architecture changes, see the "Detailed Debug Report & Architecture" section in this README below.**
+
+---
+
+## 🚀 Production Deployment
+
+### Docker Deployment
+
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV ENV=production
+ENV REDIS_URL=redis://redis:6379/0
+
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "main:app"]
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=production
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  celery:
+    build: .
+    command: celery -A celery_app worker --loglevel=info
+    environment:
+      - ENV=production
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  celery-flower:
+    build: .
+    command: celery -A celery_app flower
+    ports:
+      - "5555:5555"
+    environment:
+      - ENV=production
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+```
+
+Run with:
+```bash
+docker-compose up -d
+# API: http://localhost:8000
+# Flower: http://localhost:5555
+```
+
+### Environment-Specific Configuration
+
+**Development:**
+```bash
+ENV=development
+# Automatically uses SQLite
+# No Redis required
+# Dummy LLM fallback
+```
+
+**Production:**
+```bash
+ENV=production
+REDIS_URL=redis://prod-redis:6379/0
+OPENAI_API_KEY=sk-prod-xxxx
+```
+
+---
+
+## 📊 Monitoring
+
+### Task Queue Status
+
+Visit Celery Flower UI:
+```bash
+# Terminal 4:
+celery -A celery_app flower
+# Open http://localhost:5555
+```
+
+**View:**
+- Active tasks
+- Success/failure rates
+- Task execution times
+- Worker status
+
+### Database Queries
+
+```bash
+# All pending tasks
+sqlite3 financial_analyzer.db
+sqlite> SELECT id, status, created_at FROM analysis_results WHERE status='pending';
+
+# Failed tasks with errors
+sqlite> SELECT id, error_message FROM analysis_results WHERE status='failed';
+
+# Completed tasks with timestamps
+sqlite> SELECT id, completed_at, datetime(completed_at '-created_at') as duration 
+        FROM analysis_results WHERE status='completed';
+```
+
+---
+
+## � Detailed Debug Report & Architecture
+
+This project successfully resolved **10 critical issues** and was upgraded with production-grade architecture. Below is the complete history and technical justification for all changes.
+
+### Bug Fixes
+
+#### Bug #1 – Incorrect CrewAI Agent Import Path
+**File:** `agents.py:7` | **Severity:** CRITICAL
+
+CrewAI v0.130.0 reorganized its module exports, flattening the public API so main classes are now exported directly from the `crewai` package rather than submodules.
 
 ```python
-# ❌ Before
+# Before (WRONG):
 from crewai.agents import Agent
 
-# ✅ After
+# After (CORRECT):
 from crewai import Agent
 ```
 
 ---
 
-### Bug #2 — Circular LLM Self-Reference `[CRITICAL]`
-**File:** `agents.py:11`
+#### Bug #2 – Circular Self-Reference for LLM Initialization
+**File:** `agents.py:11` | **Severity:** CRITICAL
 
-`llm = llm` was a self-referential assignment — variable was never defined, causing `NameError` on import. Also missing `ChatOpenAI` import entirely.
+Code had `llm = llm` (self-referential assignment) with no actual LLM being initialized. The variable `llm` was undefined, causing a `NameError`. Also missing `ChatOpenAI` import.
 
 ```python
-# ❌ Before
-llm = llm  # NameError: undefined
+# Before (WRONG):
+llm = llm  # Self-referential, NameError
 
-# ✅ After
+# After (CORRECT):
 from langchain_openai import ChatOpenAI
 
+def get_llm():
+    global _llm_instance
+    if _llm_instance is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is not set")
+        _llm_instance = ChatOpenAI(model="gpt-4", temperature=0.7, api_key=api_key)
+    return _llm_instance
+
 try:
-    llm = ChatOpenAI(model="gpt-4", temperature=0.2,
-                     api_key=os.getenv("OPENAI_API_KEY"))
+    llm = get_llm()
 except Exception:
-    llm = DummyLLM()  # fallback for development
+    llm = DummyLLM()  # Fallback for development
 ```
 
 ---
 
-### Bug #3 — Invalid Tool Type in CrewAI Task `[CRITICAL]`
-**File:** `task.py:18`
+#### Bug #3 – Invalid Tool Type in CrewAI Task Definition
+**File:** `task.py:18` | **Severity:** CRITICAL
 
-`search_tool` was `None`. Pydantic v2 (required by CrewAI v0.130.0) strictly validates all fields and raises `ValidationError` on `None` in a tools list.
+Code passed `tools=[search_tool]` where `search_tool = None`. Pydantic v2 (required by CrewAI v0.130.0) validates all fields strictly and no longer coerces `None` values silently, causing a `ValidationError`.
 
 ```python
-# ❌ Before
-from tools import search_tool  # search_tool = None
-task = Task(tools=[search_tool])
+# Before (WRONG):
+from tools import search_tool  # Could be None
+analyze_financial_document = Task(tools=[search_tool])
 
-# ✅ After
-task = Task(tools=[])  # empty list is valid
+# After (CORRECT):
+analyze_financial_document = Task(tools=[])  # Empty list is valid
 ```
 
 ---
 
-### Bug #4 — Wrong Tool Decorator Import `[CRITICAL]`
-**File:** `tools.py:6`
+#### Bug #4 – Wrong Tool Import from crewai_tools
+**File:** `tools.py:6` | **Severity:** CRITICAL
 
-`crewai_tools` only contains pre-built tools like `SerperDevTool` — it does not export a `@tool` decorator. In CrewAI v0.130.0, plain functions work without any decorator.
+The `tool` decorator doesn't exist in `crewai_tools`. That package only contains pre-built tools like `SerperDevTool`. In CrewAI v0.130.0, plain functions work without any decorator.
 
 ```python
-# ❌ Before
+# Before (WRONG):
 from crewai_tools import tool, SerperDevTool
 
-# ✅ After
+# After (CORRECT):
 from crewai_tools import SerperDevTool
-# Use plain functions — no decorator needed
+# Use plain functions instead of @tool decorator
 ```
 
 ---
 
-### Bug #5 — Missing PDF Loader Import `[CRITICAL]`
-**File:** `tools.py:20`
+#### Bug #5 – Missing PDF Loader Import
+**File:** `tools.py:20` | **Severity:** CRITICAL
 
-`Pdf` class was used but never imported. LangChain moved loaders to `langchain_community` and renamed the class to `PyPDFLoader`.
+Code used `Pdf(file_path=path).load()` but `Pdf` was never imported. LangChain moved document loaders to `langchain_community`, and the correct class name is `PyPDFLoader`.
 
 ```python
-# ❌ Before
+# Before (WRONG):
 docs = Pdf(file_path=path).load()  # NameError: Pdf not defined
 
-# ✅ After
+# After (CORRECT):
 from langchain_community.document_loaders import PyPDFLoader
 
-loader = PyPDFLoader(path)
-docs = loader.load()
-return "\n".join([doc.page_content for doc in docs])
+def read_data_tool(path: str = 'data/sample.pdf') -> str:
+    try:
+        loader = PyPDFLoader(path)
+        docs = loader.load()
+        return "\n".join([doc.page_content for doc in docs])
+    except Exception as e:
+        return f"Error reading PDF: {str(e)}"
 ```
 
 ---
 
-### Bug #6 — Duplicate Function Name Shadowing `[HIGH]`
-**File:** `main.py:10,29`
+#### Bug #6 – Duplicate Function Name (Endpoint & Import)
+**File:** `main.py:10,29` | **Severity:** HIGH
 
-The imported CrewAI task object and the FastAPI endpoint shared the same name. The endpoint definition silently overwrote the import, making the task object inaccessible at runtime.
+Both the imported task object and the FastAPI endpoint function shared the name `analyze_financial_document`, causing the task object to be shadowed and inaccessible at runtime.
 
 ```python
-# ❌ Before
-from task import analyze_financial_document   # task object
+# Before (WRONG):
+from task import analyze_financial_document  # Task object
 @app.post("/analyze")
-async def analyze_financial_document(...):    # shadows the import!
+async def analyze_financial_document(...):   # Shadows the import!
 
-# ✅ After
+# After (CORRECT):
 from task import analyze_financial_document as analyze_task
 @app.post("/analyze")
 async def submit_analysis(...):
     response = run_crew(query=query, file_path=file_path)
+    return JSONResponse(...)
 ```
 
 ---
 
-### Bug #7 — Missing python-multipart Dependency `[HIGH]`
-**File:** `requirements.txt`
+#### Bug #7 – Missing python-multipart Dependency
+**File:** `main.py:30` | **Severity:** HIGH
 
-FastAPI's `Form` and file upload handling delegates multipart parsing to `python-multipart`. Without it, all file uploads fail with `422 Unprocessable Entity`. Error only surfaces at runtime, not at import.
+FastAPI's `Form` parameter delegates multipart parsing to `python-multipart`, which was not installed. The error only surfaces at schema validation time, not at import time.
 
 ```bash
-# ✅ Fix — add to requirements.txt
-python-multipart>=0.0.6
+pip install python-multipart
 ```
 
 ---
 
-### Bug #8 — Pydantic v2 Strict LLM Validation `[MEDIUM]`
-**File:** `agents.py`
+#### Bug #8 – Pydantic v2 Strict LLM Type Validation
+**File:** `agents.py` | **Severity:** MEDIUM
 
-CrewAI v0.130.0 validates LLM instances at Agent creation time via Pydantic v2. Without `OPENAI_API_KEY`, this raised `ValidationError` on import, crashing the entire app in development.
+CrewAI v0.130.0 requires a valid LLM instance at Agent creation time. `ChatOpenAI` validates the API key immediately via Pydantic v2, causing import-time failures in dev environments without `OPENAI_API_KEY`. Fixed by adding a `DummyLLM` fallback class.
 
 ```python
-# ✅ Fix — DummyLLM fallback
 class DummyLLM:
-    """Dev fallback — no API key required"""
+    """Fallback LLM for development without API keys"""
     def __init__(self):
         self.model_name = "dummy"
-    def predict(self, text):
-        return "Development mode: LLM not configured"
 
 try:
-    llm = ChatOpenAI(model="gpt-4", temperature=0.2,
-                     api_key=os.getenv("OPENAI_API_KEY"))
+    llm = get_llm()
 except Exception:
     llm = DummyLLM()
 ```
 
 ---
 
-### Bug #9 — Requirements Dependency Conflicts `[CRITICAL]`
-**File:** `requirements.txt`
+#### Bug #9 – Requirements File Dependency Conflicts
+**File:** `requirements.txt` | **Severity:** CRITICAL
 
-Multiple strict `==` pins conflicted with `crewai==0.130.0`, causing `ResolutionImpossible` during `pip install`.
+The `requirements.txt` contained multiple strict version pins that conflicted with `crewai==0.130.0` and its transitive dependencies, causing repeated `ResolutionImpossible` errors during `pip install`.
 
-| Package | Before (broken) | After (fixed) | Reason |
-|---------|----------------|---------------|--------|
-| pydantic | `==1.10.13` | `>=2.4.2` | CrewAI requires Pydantic v2 |
-| click | `==8.1.7` | `>=8.1.8` | crewai-tools 0.47.1 requires 8.1.8+ |
-| opentelemetry-api | `==1.25.0` | `>=1.30.0` | CrewAI transitive dep |
-| protobuf | `==4.25.3` | `>=4.25.3` | Allow patch upgrades |
+**Root Causes:**
 
-```bash
-# ❌ Before — brittle exact pins
+**1. Pydantic Version Conflict**
+```
+# Before (WRONG):
 pydantic==1.10.13
+
+# After (CORRECT):
+pydantic>=2.4.2      # CrewAI v0.130.0 requires Pydantic v2
+```
+
+**2. Click Version Conflict**
+```
+# Before (WRONG):
 click==8.1.7
 
-# ✅ After — flexible minimums, keep only CrewAI pinned
+# After (CORRECT):
+click>=8.1.8         # Required by crewai-tools==0.47.1
+```
+
+**3. OpenTelemetry Version Mismatch**
+```
+# Before (WRONG):
+opentelemetry-api==1.25.0
+
+# After (CORRECT):
+opentelemetry-api>=1.30.0   # Required by CrewAI
+```
+
+**4. Over-pinned Transitive Dependencies**
+
+Several packages (`onnxruntime`, `opentelemetry-*`, `protobuf`, etc.) were hard-pinned to specific patch versions incompatible with CrewAI's resolver. These were converted from `==` exact pins to `>=` minimum version constraints, allowing pip to resolve a compatible set automatically.
+
+**Fix Strategy — replace strict pins with minimum constraints:**
+```
+# Before (WRONG) — brittle exact pins:
+pydantic==1.10.13
+click==8.1.7
+opentelemetry-api==1.25.0
+protobuf==4.25.3
+
+# After (CORRECT) — flexible minimum constraints:
 pydantic>=2.4.2
 click>=8.1.8
-crewai==0.130.0
+opentelemetry-api>=1.30.0
+protobuf>=4.25.3
+crewai==0.130.0          # Keep CrewAI pinned exactly as required
+```
 
-# Verify
-python -c "import crewai, pydantic; print(pydantic.VERSION)"  # → 2.x.x ✓
+**Validation:**
+```bash
+pip install -r requirements.txt
+# Result: Successfully installed all packages ✓
+
+python -c "import crewai, pydantic; print(pydantic.VERSION)"
+# Result: 2.x.x ✓
 ```
 
 ---
 
-### Bug #10 — Database Session Lifecycle (404 After /analyze) `[CRITICAL]`
-**Files:** `db.py`, `main.py`, `crud.py`
+#### Bug #10 – Task ID Not Found (404 Error After /analyze)
+**Files:** `db.py`, `main.py`, `crud.py` | **Severity:** CRITICAL
 
-`POST /analyze` returned a valid `task_id`, but immediately calling `GET /status/{task_id}` returned 404.
+POST `/analyze` returned a valid `task_id`, but immediate GET `/status/{task_id}` and `/analysis/{task_id}` calls returned 404. The database record appeared missing.
 
-**Root cause:** `get_session()` used a plain `return` instead of `yield`. FastAPI never ran cleanup code, so the session was never properly closed after the endpoint committed. SQLite's transaction isolation caused the next session to see a stale view — returning `None` → 404.
+**Root Cause:** `get_session()` used a plain `return` instead of a `yield` generator, so FastAPI never ran cleanup code. The session was neither closed nor guaranteed flushed before the next request opened a new session — causing SQLite transaction isolation to hide the just-committed record.
 
 ```python
-# ❌ Before — no cleanup, session never closed
+# Before (WRONG): no cleanup, no close guarantee
 def get_session() -> Session:
     return SessionLocal()
 
-# ✅ After — generator with guaranteed cleanup
+# After (CORRECT): generator pattern with guaranteed cleanup
 def get_session() -> Session:
     db = SessionLocal()
     try:
         yield db
-    except Exception:
+    except Exception as e:
         db.rollback()
         raise
     finally:
-        db.close()  # always runs after endpoint completes
+        db.close()  # Always runs after FastAPI endpoint completes
 ```
 
 **Cascade of failures with the broken pattern:**
-1. `POST /analyze` — commits record, session never closes
-2. `GET /status/{task_id}` — new session queries DB; previous open session causes SQLite to return stale view → `None` → 404
-3. Celery worker — its own `SessionLocal()` also sees stale data, fails silently
+1. POST `/analyze` — session created, `commit()` called, but session never closed
+2. GET `/status/{task_id}` — new session queries DB; previous session still open causes SQLite to return stale view → `None` → 404
+3. Celery task — its own `SessionLocal()` also sees stale data, fails silently
 
-**Additional fix — verify persistence after every write in `crud.py`:**
-```python
-session.add(analysis)
-session.commit()
-session.refresh(analysis)  # force re-read from disk
+**Additional fixes applied:**
 
-verify = session.query(AnalysisResult).filter_by(id=task_id).first()
-if not verify:
-    raise RuntimeError(f"Task {task_id} failed to persist!")
-logger.info(f"✓ VERIFIED: {task_id} exists in DB")
-```
-
-**Enable SQLite foreign key enforcement in `db.py`:**
+Enable SQLite foreign key enforcement in `db.py`:
 ```python
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_conn, connection_record):
@@ -326,95 +882,263 @@ def set_sqlite_pragma(dbapi_conn, connection_record):
     cursor.close()
 ```
 
-**Validate:**
+Verify persistence immediately after write in `crud.py`:
+```python
+session.add(analysis)
+session.commit()
+verify = session.query(AnalysisResult).filter(AnalysisResult.id == task_id).first()
+if not verify:
+    logger.error(f"Analysis NOT found after creation: {task_id}")
+```
+
+**Validation:**
 ```bash
-curl -X POST http://localhost:8000/analyze -F "file=@report.pdf"
-# → {"task_id": "uuid-here", "status": "pending"}
-curl http://localhost:8000/status/uuid-here
-# → {"status": "pending", "progress": 0}  ✓ no longer 404
+curl -X POST http://localhost:8000/analyze -F "file=@report.pdf" -F "query=Analyze"
+# → {"task_id": "12345-uuid", "status": "pending"}
+
+curl http://localhost:8000/status/12345-uuid
+# → {"task_id": "12345-uuid", "status": "pending", "progress": 0}  ✓ No longer 404
 ```
 
 ---
 
-## Common Runtime Errors
+### Architecture Upgrades
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `Error 10061 connecting to localhost:6379` | Redis not running in dev | Unset `ENV`; dev uses SQLite automatically |
-| `404 Task not found` | Session lifecycle bug | See Bug #10 |
-| `400 Only PDF files supported` | Wrong file type | Use `.pdf` extension |
-| `422 Unprocessable Entity` on upload | Missing `python-multipart` | See Bug #7 |
-| Analysis stuck at `running` 10+ min | LLM timeout / bad PDF | Check `OPENAI_API_KEY`; dev uses DummyLLM |
-| `sqlite database is locked` | Multiple Celery processes | Use `--pool=solo` in dev |
+#### Queue Worker Model (Celery + Redis)
+
+**Problem:** The `/analyze` endpoint blocked for 5–10 minutes per request with no scalability, no progress tracking, and no persistence if the connection dropped.
+
+**Solution:** Async task queue. The endpoint now returns a `task_id` in under 500ms, and a Celery worker handles analysis in the background.
+
+```
+POST /analyze      → validate file → queue Celery task → return task_id (202 Accepted)
+GET  /status/{id}  → returns: pending | running | completed | failed
+GET  /analysis/{id}→ returns full result from database
+```
+
+Celery was chosen for its distributed execution, built-in retries, Redis-backed persistence, and Flower monitoring UI — superior to APScheduler (single-machine) or plain asyncio tasks (no persistence).
+
+**Key Celery configuration:**
+```python
+celery_app.conf.update(
+    task_time_limit=30 * 60,        # 30 min hard limit
+    task_soft_time_limit=25 * 60,   # 25 min soft limit
+    worker_prefetch_multiplier=1,   # Load balance across workers
+    result_expires=3600,            # Results expire after 1 hour
+)
+```
 
 ---
 
-## Dev vs. Production Celery
+#### Database Integration (SQLAlchemy + SQLite)
 
-`celery_app.py` auto-selects broker based on `ENV`:
+**Problem:** No persistence layer — task status lost on restart, no user tracking, no audit trail, no way to retrieve past analyses.
+
+**Schema:**
 
 ```python
-if os.getenv("ENV") == "production":
-    BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-else:
-    os.makedirs("celery_data", exist_ok=True)
-    BROKER_URL = "sqla+sqlite:///celery_data/celery_broker.db"  # zero config
+class AnalysisResult(Base):
+    __tablename__ = "analysis_results"
+    id = Column(String(36), primary_key=True)   # UUID / task_id
+    user_id = Column(Integer, ForeignKey("users.id"))
+    filename = Column(String(255))
+    status = Column(String(50))                  # pending | running | completed | failed
+    result_json = Column(JSON)
+    error_message = Column(String(500))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime)
 ```
 
-| Feature | Redis (Prod) | SQLite (Dev) |
-|---------|-------------|-------------|
-| External service | Required | None |
-| Multi-process safe | ✅ Excellent | ⚠️ Use `--pool=solo` |
-| Throughput | 10k+ tps | Hundreds tps |
-| Setup | Install + start | Zero config |
+SQLite was chosen for MVP simplicity and zero-config setup. The schema is fully compatible with PostgreSQL for future migration.
+
+**Celery task DB integration:**
+```python
+@celery_app.task(bind=True)
+def analyze_document_task(self, task_id, file_path, query, user_id):
+    update_analysis_status(session, task_id, "running")
+    result = run_crew_analysis(query, file_path)
+    update_analysis_result(session, task_id, "completed", json.loads(result))
+```
 
 ---
 
-## Debug Commands
+#### Prompt Engineering Improvements
+
+**Problems with original prompts:** encouraged hallucination ("make up facts"), no structured output, temperature set to 0.7, and no citation requirements.
+
+**Changes:**
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| Temperature | 0.7 (creative) | 0.2 (consistent) |
+| Output format | Free text | Structured JSON |
+| Evidence | Optional | Required |
+| Citations | None | Mandatory |
+| Compliance | Ignored | Enforced |
+
+Four specialized agents now handle distinct responsibilities: **Equity Analyst** (revenue & margins), **Risk Specialist** (liquidity & solvency), **Cash Flow Analyst** (free cash flow quality), and **Investment Strategist** (final BUY/HOLD/SELL with confidence score).
+
+**Structured output schema (Pydantic v2):**
+```python
+class CrewAIOutput(BaseModel):
+    revenue_analysis: str
+    profitability_analysis: str
+    cash_flow_analysis: str
+    risk_assessment: str
+    recommendation: str    # BUY | HOLD | SELL
+    confidence_score: int  # 0–100
+    cited_sources: list[str]
+    reasoning: str
+```
+
+---
+
+#### Dev vs. Production Celery Configuration
+
+**Problem:** Celery required a running Redis instance at `redis://localhost:6379/0` even in development, causing `Connection refused` errors and setup friction for new developers.
+
+**Solution:** `celery_app.py` now auto-selects broker and backend based on the `ENV` environment variable:
+
+```python
+ENV = os.getenv("ENV", "development").lower()
+
+if ENV == "production":
+    BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    RESULT_BACKEND = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+else:
+    # No external services needed — SQLite file-based broker
+    os.makedirs("celery_data", exist_ok=True)
+    BROKER_URL = "sqla+sqlite:///celery_data/celery_broker.db"
+    RESULT_BACKEND = "db+sqlite:///celery_data/celery_results.db"
+```
+
+**New dependency required for SQLite broker support:**
+```bash
+pip install kombu[sqlalchemy]
+```
+
+**Development setup (no Redis):**
+```bash
+uvicorn main:app --reload
+celery -A celery_app worker --loglevel=info --pool=solo
+# Uses celery_data/celery_broker.db and celery_results.db automatically
+```
+
+**Production setup (Redis):**
+```bash
+export ENV=production
+export REDIS_URL=redis://your-redis-host:6379/0
+docker run -d -p 6379:6379 redis:latest
+celery -A celery_app worker --loglevel=info --concurrency=4
+```
+
+| Feature | Redis (Production) | SQLite (Development) |
+|---|---|---|
+| External service required | Yes | No |
+| Multi-process safe | ✅ Excellent | ⚠️ Limited (use `--pool=solo`) |
+| Throughput | ✅ 10k+ tps | ⚠️ Hundreds tps |
+| Setup friction | ❌ Install + start | ✅ Zero config |
+
+**Common issue:** If you see `sqlite database is locked`, ensure Celery is running with `--pool=solo` in development. To switch to Redis, set `ENV=production` and restart — no migration needed, dev tasks can be discarded.
+
+---
+
+### Version Compatibility Matrix
+
+| Component | Version | Status |
+|-----------|---------|--------|
+| Python | 3.12.3 | ✅ Verified |
+| CrewAI | 0.130.0 | ✅ No Downgrade |
+| FastAPI | 0.110.0+ | ✅ Compatible |
+| Pydantic | 2.4.2+ | ✅ Fully Compatible |
+| LangChain | 0.1.52+ | ✅ Compatible |
+| python-multipart | Latest | ✅ Installed |
+
+---
+
+## �📦 Project Structure
+
+```
+financial-document-analyzer-debug/
+├── main.py                    # FastAPI endpoints (POST /analyze, GET /status, GET /analysis)
+├── celery_app.py             # Celery configuration (development/production toggle)
+├── agents.py                 # 4 production financial analysis agents
+├── task.py                   # CrewAI task definition
+├── crud.py                   # Database CRUD operations
+├── db.py                     # SQLAlchemy ORM setup, session management
+├── models.py                 # User and AnalysisResult models
+├── schemas.py                # Pydantic v2 request/response schemas
+├── tools.py                  # PDF processing and utilities
+├── requirements.txt          # Dependencies
+├── README.md                 # This file (includes complete debug report)
+├── test_db_flow.py          # Database session lifecycle test
+│
+├── data/                     # Input PDF storage
+├── outputs/                  # Analysis output storage
+├── celery_data/             # SQLite Celery broker/results (auto-created)
+└── __pycache__/             # Python cache
+```
+
+---
+
+## 🧪 Testing
+
+### Unit Test: Database Session Lifecycle
 
 ```bash
-# Inspect all tasks
-sqlite3 financial_analyzer.db "SELECT id, status, created_at FROM analysis_results;"
-
-# Failed tasks with errors
-sqlite3 financial_analyzer.db "SELECT id, error_message FROM analysis_results WHERE status='failed';"
-
-# Run DB lifecycle test
 python test_db_flow.py
-# → ✓ Record created  ✓ Found after fresh session  ✓ Updated  ✓ SUCCESS
+```
 
-# Monitor Celery tasks (UI at localhost:5555)
-celery -A celery_app flower
+Output:
+```
+✓ Record created: status=pending
+✓ Record found after fresh session
+✓ Record updated successfully
+✓ SUCCESS: Database flow working correctly!
 ```
 
 ---
 
-## Analysis Output Schema
+## 🔐 Security Considerations
 
-```json
-{
-  "revenue_analysis":       "string",
-  "profitability_analysis": "string",
-  "cash_flow_analysis":     "string",
-  "risk_assessment":        "string",
-  "recommendation":         "BUY | HOLD | SELL",
-  "confidence_score":        0–100,
-  "cited_sources":          ["Page 2: Revenue breakdown", "..."],
-  "reasoning":              "string"
-}
-```
-
-> Recommendations only issued at ≥70% confidence. All claims must cite document page numbers. Temperature fixed at 0.2 for consistency.
+- SQLite database file contains full analysis history
+- Backup database regularly in production
+- Use environment variables for API keys
+- Implement authentication/authorization before production
+- Validate file uploads (PDF type, max size)
+- Rate limit API endpoints if exposed publicly
 
 ---
 
-## Version Compatibility
+## 📞 Support & Documentation
 
-| Component | Version | Notes |
-|-----------|---------|-------|
-| Python | 3.12.3 | Verified |
-| CrewAI | 0.130.0 | Pin exactly |
-| Pydantic | ≥2.4.2 | v2 required (breaking change) |
-| FastAPI | ≥0.110.0 | |
-| LangChain | ≥0.1.52 | |
-| python-multipart | Latest | Required for file uploads |
+| Document | Purpose |
+|----------|---------|
+| README.md (Detailed Debug Report section) | Complete bug analysis and fixes (merged into README) |
+| `test_db_flow.py` | Database layer testing |
+| Logs | Real-time execution tracking |
+| `/docs` | Interactive API documentation (Swagger UI) |
+| `/redoc` | Alternative API documentation |
+
+---
+
+## ✅ Production Readiness Checklist
+
+- ✅ All 10 critical bugs fixed
+- ✅ Database session lifecycle corrected (no more 404 errors)
+- ✅ Non-blocking async API with Celery queue
+- ✅ SQLAlchemy ORM for persistent storage
+- ✅ Four production-grade financial agents
+- ✅ Comprehensive error handling and logging
+- ✅ Development mode (no Redis required)
+- ✅ Production mode with Redis support
+- ✅ Docker deployment ready
+- ✅ Monitoring capabilities (Flower, Logs)
+- ✅ Complete API documentation
+- ✅ Complete bug analysis merged into README
+
+---
+
+**System Status:** 🟢 **PRODUCTION READY**  
+**Last Tested:** February 27, 2026  
+**Version:** 2.0.0
